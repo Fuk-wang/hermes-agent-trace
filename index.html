@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>htrace · Hermes Agent 工具调用追踪</title>
+<meta name="description" content="htrace — a local, offline trace viewer for Hermes Agent sessions: every tool call, its arguments, its result, its cost, and the source line that ran it.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23080b10'/%3E%3Cpath d='M8 22V10m0 6h9m0-6v12' stroke='%2322d3ee' stroke-width='2.4' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='23' cy='16' r='3' fill='%23818cf8'/%3E%3C/svg%3E">
+</head>
+<body>
+<div class="app">
+
+  <aside class="rail">
+    <div class="brand">
+      <div class="brand-mark">h</div>
+      <div class="brand-text">
+        <strong>htrace</strong>
+        <span>hermes agent trace</span>
+      </div>
+    </div>
+
+    <nav id="nav" class="nav">
+      <button class="nav-item is-active" data-view="overview"><span class="k">1</span>总览</button>
+      <button class="nav-item" data-view="sessions"><span class="k">2</span>会话</button>
+      <button class="nav-item" data-view="calls"><span class="k">3</span>工具调用</button>
+      <button class="nav-item" data-view="timeline"><span class="k">4</span>时间线</button>
+      <button class="nav-item" data-view="cost"><span class="k">5</span>成本</button>
+      <button class="nav-item" data-view="subagents"><span class="k">6</span>子代理</button>
+      <button class="nav-item" data-view="source"><span class="k">7</span>源码索引</button>
+      <button class="nav-item" data-view="raw"><span class="k">8</span>原始数据</button>
+    </nav>
+
+    <div class="rail-foot">
+      <div class="mode" id="mode-badge">DEMO</div>
+      <label class="filebtn">
+        <input type="file" id="file-input" accept=".json,application/json" hidden>
+        打开 trace.json
+      </label>
+      <p class="tiny">键盘：<b>1-8</b> 切页 · <b>/</b> 搜索 · <b>j/k</b> 移动 · <b>Enter</b> 展开 · <b>Esc</b> 关闭</p>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar-left">
+        <h1 id="view-title">总览</h1>
+        <p id="view-sub" class="sub"></p>
+      </div>
+      <div class="topbar-right">
+        <div class="searchwrap">
+          <input id="search" type="search" placeholder="搜索工具 / 参数 / 结果…  ( / )" autocomplete="off">
+          <span id="search-count" class="searchcount"></span>
+        </div>
+        <div class="badge" id="data-badge">—</div>
+      </div>
+    </header>
+
+    <section class="view" id="view-overview"></section>
+    <section class="view" id="view-sessions" hidden></section>
+    <section class="view" id="view-calls" hidden></section>
+    <section class="view" id="view-timeline" hidden></section>
+    <section class="view" id="view-cost" hidden></section>
+    <section class="view" id="view-subagents" hidden></section>
+    <section class="view" id="view-source" hidden></section>
+    <section class="view" id="view-raw" hidden></section>
+  </main>
+
+  <aside class="drawer" id="drawer" hidden>
+    <div class="drawer-head">
+      <div>
+        <div class="drawer-kicker" id="drawer-kicker">tool call</div>
+        <h2 id="drawer-title">—</h2>
+      </div>
+      <button class="iconbtn" id="drawer-close" title="关闭 (Esc)">✕</button>
+    </div>
+    <div class="drawer-body" id="drawer-body"></div>
+  </aside>
+
+</div>
+<div class="toast" id="toast" hidden></div>
+<script src="demo/trace.demo.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>
