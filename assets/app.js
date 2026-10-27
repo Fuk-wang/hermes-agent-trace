@@ -123,6 +123,8 @@
     if (!state.doc) { renderEmpty(); return; }
     const d = state.doc;
     $('#data-badge').textContent = `${d.sessions.length} 会话 · ${fmtInt(d.totals.calls)} 调用 · ${d.schema}`;
+    // 只有列表类视图有可键盘导航的行：其余视图清空，免得 j/k、Enter 作用在上一页残留的节点上
+    if (state.view !== 'calls' && state.view !== 'sessions') { state.rows = []; state.cursor = 0; }
     switch (state.view) {
       case 'overview': renderOverview(); break;
       case 'sessions': state.sessionId ? renderSessionDetail(state.sessionId) : renderSessions(); break;
@@ -335,6 +337,18 @@
   }
 
   /* ---------------- calls ---------------- */
+  /* 行的稳定标识：重渲染后用它把键盘光标钉回原来那一条，而不是沿用旧的下标 */
+  const rowKeyOf = (tr) => (tr ? (tr.dataset.call || '') + '|' + (tr.dataset.seq || '') : '');
+  function syncCursor(anchorKey) {
+    state.cursor = 0;
+    if (anchorKey) {
+      const i = state.rows.findIndex((r) => rowKeyOf(r) === anchorKey);
+      if (i >= 0) state.cursor = i;
+    }
+    const row = state.rows[state.cursor];
+    if (anchorKey && row) row.classList.add('is-sel');
+  }
+
   function callFiltered() {
     const f = state.filters;
     const q = f.q.trim().toLowerCase();
@@ -356,6 +370,9 @@
 
   function renderCalls() {
     const box = $('#view-calls');
+    /* 只有真的高亮过（用户按过 j/k）才把光标钉住；否则维持「没有选区」的原状 */
+    const prevRow = state.rows[state.cursor];
+    const anchor = prevRow && prevRow.classList.contains('is-sel') ? rowKeyOf(prevRow) : '';
     const tools = Object.entries(state.doc.by_tool || {}).sort((a, b) => b[1].calls - a[1].calls);
     const rows = callFiltered();
     const limited = rows.slice(0, 600);
@@ -413,7 +430,8 @@
         if (call) openCall(call, s);
       };
     });
-    updateSearchCount();
+    syncCursor(anchor);
+    updateSearchCount(rows.length);
   }
 
   /* ---------------- timeline ---------------- */
@@ -781,17 +799,57 @@
   });
 
   /* ---------------- search ---------------- */
-  function updateSearchCount() {
+  /* 每敲一个字符都全量过滤 + 重建整张表太贵（5000 条时约 70ms/键），所以延迟 200ms 再算 */
+  const SEARCH_DEBOUNCE_MS = 200;
+  let searchTimer = null;
+
+  function updateSearchCount(n) {
     const q = state.filters.q.trim();
-    $('#search-count').textContent = q ? String(callFiltered().length) : '';
+    const badge = $('#search-count');
+    const hint = $('#search-hint');
+    if (!q) { badge.textContent = ''; if (hint) hint.hidden = true; return; }
+    const count = typeof n === 'number' ? n : callFiltered().length;
+    if (state.view === 'calls') {
+      badge.textContent = String(count);
+      if (hint) hint.hidden = true;
+    } else {
+      /* 不在工具调用页时不抢视图：只报数，点一下或按 Enter 再过去 */
+      badge.textContent = '';
+      if (hint) {
+        hint.hidden = false;
+        hint.textContent = `${count} 条 · ↵ 在工具调用里看`;
+      }
+    }
+  }
+
+  function applySearch() {
+    searchTimer = null;
+    if (state.view === 'calls') renderCalls();
+    else updateSearchCount();
+  }
+
+  function jumpToSearchResults() {
+    clearTimeout(searchTimer);
+    searchTimer = null;
+    if (state.view !== 'calls') setView('calls');
+    else renderCalls();
   }
 
   $('#search').addEventListener('input', (e) => {
     state.filters.q = e.target.value;
-    if (state.view !== 'calls') setView('calls');
-    else renderCalls();
-    updateSearchCount();
+    clearTimeout(searchTimer);
+    searchTimer = null;
+    if (!state.filters.q.trim()) { applySearch(); return; }
+    searchTimer = setTimeout(applySearch, SEARCH_DEBOUNCE_MS);
   });
+
+  $('#search').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); jumpToSearchResults(); }
+    else if (e.key === 'Escape') e.target.blur();
+  });
+
+  const searchHint = $('#search-hint');
+  if (searchHint) searchHint.onclick = jumpToSearchResults;
 
   /* ---------------- nav / data ---------------- */
   document.querySelectorAll('.nav-item').forEach((b) => {
