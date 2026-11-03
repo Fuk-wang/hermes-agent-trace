@@ -76,6 +76,28 @@ Hermes 的每个工具在导入时调用 `registry.register(name=..., handler=..
 不导入任何 Hermes 代码，不启动 agent，也不联网。点开任意一次调用，抽屉里给出实现位置，
 用来核对模型的自述。
 
+## 上下文视图（Context）
+
+第四个问题：**这次请求到底往模型里塞了什么**。每条请求画一条六类堆叠条——`sys`（system prompt 去掉
+注入块）、`injected`（memory / SOUL / skills 索引 / 运行时环境）、`tools`（工具 JSON schema）、
+`user` / `assistant` / `tool`（对话与工具结果）。点「看原文」开抽屉看该段文字。
+
+token 不猜：`pre_api_request` 记每类字符数（CJK 单独计数），`post_api_request` 给真实
+`prompt_tokens`，build 时拟合每类 chars/token，并做留一交叉验证；偏差超过 5% 整页标 `estimated`。
+参考跑批：16 条请求，样本内中位偏差 0.30% / 最大 0.72%，留一交叉验证中位 0.49% / p90 0.92% /
+最大 2.91%。细节见 [docs/CONTEXT.md](docs/CONTEXT.md)。
+
+```bash
+# 装采集插件（改 config.yaml 前自动备份；--remove 可撤，采集数据保留）
+python -m htrace plugin --install --home "$LOCALAPPDATA/hermes/profiles/monitor"
+python -m htrace plugin --status  --home "$LOCALAPPDATA/hermes/profiles/monitor"
+
+# 重建 trace 时把插件数据带进来
+python -m htrace build --out trace.json --source "<hermes-agent>" \
+  --context "$LOCALAPPDATA/hermes/profiles/monitor/htrace-context" \
+  --raw-out demo/context.raw.js
+```
+
 ## 数据与隐私
 
 - 本地优先：解析、渲染都在本机；静态站不发任何请求（`demo/trace.demo.js` 除外，它是本地文件）。
@@ -84,16 +106,36 @@ Hermes 的每个工具在导入时调用 `registry.register(name=..., handler=..
 - 用户自己拖进网页的 `trace.json` **不会**被自动脱敏——那是原文，分享前请自己处理，
   或用 `python -m htrace build --redact` 重新导出一份。详见 [docs/PRIVACY.md](docs/PRIVACY.md).
 
+- **上下文视图的原文是分开存的**：`trace.json.context` 只有每请求的分段尺寸与摘要，正文走
+  `--raw-out` 侧车，只保留最近 50 条请求（插件写盘时按文件数裁剪，build 时再截一次）；单类上限
+  6k 字符并标 `truncated`。
+- `--raw-context` 限定「只有这些 profile 能贡献原文」，其他 profile 只参与校准、不出文本。
+- 记忆（`MEMORY`）与用户档案（`USER PROFILE`）正文默认不发布：段头与 `[x/y chars]` 体量保留，
+  正文换成 `（已脱敏 · N 字符…）` 占位；确实要连正文发才加 `--raw-include-personal`。
+  公开 demo 用的是这条规则，`context.personal_notes` 会写 `replaced-by-size`。
+
+## 自检记录（2026-11-03）
+
+- 真机采集 16 条请求（monitor + product 两个 profile）；六类系数全部可识别，样本内中位偏差 0.30% /
+  最大 0.72%，留一交叉验证中位 0.49% / p90 0.92% / 最大 2.91% → `calibration.ok = true`
+- 插件安装按惯例：装 monitor → 跑通 → 再装 product；`--remove` 撤掉后采集数据保留，重装即恢复
+- 公开侧车 `demo/context.raw.js` 里 `SNI` 出现 0 次（改前 4 次）；每个带原文的请求脱掉 3,419–5,353 字符
+  记忆/档案正文，抽屉里只剩段头 + `（已脱敏 · 2,130 字符…）` 占位
+- 测试：`python -m unittest discover -s tests` → 17 tests OK
+- 渲染：无头 Chrome 打开 `#context` → 16 行请求、六段堆叠条 6/6；深链 `#context/<key>/<类>` 直开抽屉
+
 ## 目录
 
 ```
 index.html            静态站入口（也是 Pages 首页）
 assets/               app.js / style.css
 demo/trace.demo.js    内置演示数据（真实 trace + 完整脱敏）
-htrace/               Python 解析器与 CLI
+demo/context.raw.js   上下文原文侧车（最近 50 条请求，记忆正文已脱敏）
+htrace/               Python 解析器与 CLI（含 context.py / segments.py / plugin_install.py）
+plugins/htrace_context/  采集插件：pre_api_request 记尺寸，post_api_request 记 usage
 hooks/                shell hook 与安装器
 skills/hermes-trace-monitor/  监控 agent 用的 skill
-docs/                 架构、hook 契约、隐私
+docs/                 架构、hook 契约、隐私、上下文视图（CONTEXT.md）
 ```
 
 ## 已知边界
