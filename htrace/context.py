@@ -32,7 +32,7 @@ CATEGORIES = list(segments.CATEGORIES)
 LABELS = dict(segments.LABELS)
 PRIOR_CPT = 4.0          # chars per token before any data
 RAW_KEEP_DEFAULT = 50
-RAW_SEG_CAP = 6000       # chars per category per request in the sidecar
+RAW_SEG_CAP = 40000      # chars per category per request in the sidecar (UI pages it at 6k)
 RAW_TOTAL_CAP = 3_000_000
 
 

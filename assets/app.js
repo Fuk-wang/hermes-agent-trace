@@ -675,6 +675,7 @@
   /* ---------------- context ---------------- */
   /* 六类上下文：sys / injected / tools / user / assistant / tool。
      尺寸来自 htrace-context 插件；token 是按类别拟合出来的估计值，逐条带偏差。 */
+  const CTX_TEXT_PAGE = 6000;   // 首屏只铺这么多；更长的按需展开
   const CTX_SEG = [
     ['sys', 'system prompt'],
     ['injected', '注入 · memory/skills/env'],
@@ -928,10 +929,21 @@ python -m htrace build --context &lt;profile&gt;/htrace-context --raw-out demo/c
         body.innerHTML = head + `<div class="note">这一类的原文没有保留：不在最近 ${raw.keep || 50} 条请求里，或该类在这个请求里为空。</div>`;
         return;
       }
+      const first = seg.text.slice(0, CTX_TEXT_PAGE);
+      const rest = seg.text.length - first.length;
       body.innerHTML = head + `
-        <div class="subhead">原文${seg.truncated ? `（已截断到 ${fmtInt(seg.text.length)} 字符）` : ''}</div>
-        <pre class="code rawtext">${esc(seg.text)}</pre>
-        <div class="hstack"><button class="mini-btn" id="copy-ctx-seg">复制这一段</button></div>`;
+        <div class="subhead">原文${seg.truncated ? `（保存到 ${fmtInt(seg.text.length)} 字符为止）` : ''}</div>
+        <pre class="code rawtext" id="ctx-pre">${esc(first)}</pre>
+        <div class="hstack">
+          ${rest > 0 ? `<button class="mini-btn" id="ctx-more">展开剩余 ${fmtInt(rest)} 字符</button>` : ''}
+          <button class="mini-btn" id="copy-ctx-seg">复制这一段</button>
+        </div>`;
+      const more = $('#ctx-more');
+      if (more) more.onclick = () => {
+        const pre = $('#ctx-pre');
+        if (pre) pre.textContent = seg.text;
+        more.remove();
+      };
       const b = $('#copy-ctx-seg');
       if (b) b.onclick = () => copy(seg.text);
     });
