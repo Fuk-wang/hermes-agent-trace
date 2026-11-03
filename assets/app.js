@@ -481,7 +481,9 @@
   function renderTimeline() {
     const box = $('#view-timeline');
     if (!state.sessionId || !sessionById(state.sessionId)) {
-      state.sessionId = sessions().length ? sessions()[0].id : null;
+      /* 默认挑调用最多的会话：时间线要能看出形状，一两个点的会话没信息 */
+      const busiest = sessions().slice().sort((a, b) => (b.calls || []).length - (a.calls || []).length)[0];
+      state.sessionId = busiest ? busiest.id : null;
     }
     const s = sessionById(state.sessionId);
     if (!s) { box.innerHTML = '<div class="empty">没有会话</div>'; return; }
