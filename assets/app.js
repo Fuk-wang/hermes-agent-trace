@@ -1229,6 +1229,8 @@ python -m htrace build --context &lt;profile&gt;/htrace-context --raw-out demo/c
         if (!doc.sessions || !doc.schema) throw new Error('不是 htrace 文档（缺 sessions/schema）');
         state.doc = doc;
         state.sessionId = null;
+        state.ctxKey = null;
+        state._ctxCallIdx = null;   // 换了文档，请求↔调用的索引必须重建
         setMode('local');
         closeDrawer();
         setView('overview');
