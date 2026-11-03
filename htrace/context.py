@@ -304,17 +304,63 @@ def _segment_tokens(chars: Dict[str, int], cjk: Dict[str, int], params: List[flo
     return out
 
 
+# --------------------------------------------------------------------------- privacy scrub
+# agent 记忆（MEMORY）与用户档案（USER PROFILE）正文不随演示发布：标题与体量保留，正文换成
+# 一句占位。演示站是公开的，记忆文字对展示没有贡献，却会跟着每次重建自动上线。
+PERSONAL_HEAD_RE = re.compile(r"^\s*#{0,4}\s*(MEMORY\b.*|USER PROFILE\b.*)$", re.I)
+RULE_RE = re.compile(r"^\s*[\u2550\u2500\u2014-]{6,}\s*$")
+
+
+def scrub_personal(text: str, *, enabled: bool = True) -> Tuple[str, int]:
+    """Replace the body of MEMORY / USER PROFILE sections with a size note.
+
+    Returns (new_text, dropped_chars). Headings and the [x/y chars] annotation survive, so a
+    reader still sees that the agent carries a memory of N chars — just not what is in it.
+    """
+    if not enabled or not text:
+        return text, 0
+    lines = text.split("\n")
+    out: List[str] = []
+    dropped = 0
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if not PERSONAL_HEAD_RE.match(line):
+            out.append(line)
+            i += 1
+            continue
+        out.append(line)
+        j = i + 1
+        if j < len(lines) and RULE_RE.match(lines[j]):
+            out.append(lines[j])
+            j += 1
+        k = j
+        while k < len(lines):
+            probe = lines[k]
+            if k > j and RULE_RE.match(probe):
+                break
+            if PERSONAL_HEAD_RE.match(probe):
+                break
+            k += 1
+        body = "\n".join(lines[j:k])
+        dropped += len(body)
+        out.append("（已脱敏 · %s 字符的 agent 记忆正文不随演示发布）" % format(len(body), ","))
+        i = k
+    return "\n".join(out), dropped
+
+
 # --------------------------------------------------------------------------- raw sidecar
-def _raw_segments(raw: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+def _raw_segments(raw: Dict[str, Any], scrub: bool = True) -> Dict[str, Dict[str, Any]]:
     """Split one stored request into the text the drawer shows per category."""
     sys_text = ((raw.get("system_prompt") or {}).get("text") or "")
     out: Dict[str, Dict[str, Any]] = {}
 
     def put(cat: str, text: str) -> None:
-        prev = out.get(cat, {"text": "", "chars": 0, "truncated": False})
-        merged = (prev["text"] + ("\n\n" if prev["text"] else "") + text) if text else prev["text"]
+        prev = out.get(cat, {"text": "", "chars": 0, "truncated": False, "redacted": 0})
+        merged = (prev["text"] + "\n\n" + text) if (prev["text"] and text) else (prev["text"] or text)
         out[cat] = {"text": merged, "chars": len(merged),
-                    "truncated": bool(prev["truncated"]) or len(merged) > RAW_SEG_CAP}
+                    "truncated": bool(prev["truncated"]) or len(merged) > RAW_SEG_CAP,
+                    "redacted": prev["redacted"]}
 
     sys_parts: Dict[str, List[str]] = {"sys": [], "injected": []}
     for sec in segments.system_sections(sys_text):
@@ -334,13 +380,14 @@ def _raw_segments(raw: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         if chunks:
             put(role, "\n\n".join(chunks))
     for cat, item in out.items():
+        item["text"], item["redacted"] = scrub_personal(item["text"], enabled=scrub)
         if len(item["text"]) > RAW_SEG_CAP:
             item["text"] = item["text"][:RAW_SEG_CAP]
             item["truncated"] = True
     return out
 
 
-def _read_raw(row: Dict[str, Any], raw_keep: int) -> Optional[Dict[str, Any]]:
+def _read_raw(row: Dict[str, Any], raw_keep: int, scrub: bool = True) -> Optional[Dict[str, Any]]:
     ref = row.get("raw_ref")
     base = row.get("file")
     if not ref or not base:
@@ -350,7 +397,7 @@ def _read_raw(row: Dict[str, Any], raw_keep: int) -> Optional[Dict[str, Any]]:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    return _raw_segments(raw)
+    return _raw_segments(raw, scrub=scrub)
 
 
 # --------------------------------------------------------------------------- build
@@ -381,6 +428,7 @@ def build(
     *,
     raw_paths: Optional[Iterable[str]] = None,
     raw_keep: int = RAW_KEEP_DEFAULT,
+    scrub_personal_on: bool = True,
     apply_redaction: bool = False,
     env_values: Iterable[str] = (),
     home_names: Iterable[str] = (),
@@ -408,8 +456,9 @@ def build(
         truth = row.get("truth")
         key_str = "|".join(row["key"])
         has_raw = False
+        personal_redacted = 0
         if tuple(row["key"]) in keep_keys:
-            segs = _read_raw(row, raw_keep)
+            segs = _read_raw(row, raw_keep, scrub=scrub_personal_on)
             if segs and budget > 0:
                 trimmed: Dict[str, Any] = {}
                 for cat, item in segs.items():
@@ -419,9 +468,13 @@ def build(
                         budget = 0
                     else:
                         budget -= len(text)
-                    trimmed[cat] = {"text": text, "chars": item["chars"], "truncated": item["truncated"]}
+                    trimmed[cat] = {"text": text, "chars": item["chars"], "truncated": item["truncated"],
+                                    "redacted": int(item.get("redacted") or 0)}
+                redacted = sum(int(v.get("redacted") or 0) for v in trimmed.values())
+                personal_redacted = redacted
                 raw_doc["requests"][key_str] = {"ts": row.get("ts"), "segments": trimmed,
-                                                "model": row.get("model") or ""}
+                                                "model": row.get("model") or "",
+                                                "personal_redacted": redacted}
                 has_raw = True
         requests_out.append({
             "k": key_str,
@@ -436,6 +489,7 @@ def build(
             "est": est,
             "truth": truth,
             "dev": (round(abs(est - truth) / truth, 4) if truth else None),
+            "personal_redacted": personal_redacted,
             "sections": [{"heading": s.get("heading"), "k": s.get("k"), "chars": s.get("chars")}
                          for s in row.get("sections") or []][:40],
             "counts": row.get("counts") or {},
@@ -461,6 +515,7 @@ def build(
         },
         "files": [str(p) for p in _expand(paths)],
         "raw_scope": roots if roots is not None else "all",
+        "personal_notes": ("replaced-by-size" if scrub_personal_on else "published"),
         "requests": requests_out,
     }
     if apply_redaction:

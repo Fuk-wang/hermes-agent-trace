@@ -769,6 +769,7 @@ python -m htrace build --context &lt;profile&gt;/htrace-context --raw-out demo/c
           ${priorOnly.length ? `<div class="warnchip">先验主导：${esc(priorOnly.join(', '))} —— 这些类别在样本内没有变化，系数无法单独识别</div>` : ''}
           ${(cal.cv && cal.cv.max !== undefined) ? `<div class="tiny dim" style="margin-top:6px">留一交叉验证：中位 ${fmtPct(cal.cv.median)} · p90 ${fmtPct(cal.cv.p90)} · 最大 ${fmtPct(cal.cv.max)}（${fmtInt(cal.cv.n)} 折）</div>` : ''}
           ${cal.note ? `<div class="tiny dim" style="margin-top:6px">${esc(cal.note)}</div>` : ''}
+          ${(ctx.personal_notes === 'replaced-by-size') ? '<div class="tiny dim" style="margin-top:6px">记忆 / 用户档案正文不随演示发布：抽屉里只保留体量与占位，其余原文照旧。</div>' : ''}
         </div>
       </div>
 
@@ -788,7 +789,7 @@ python -m htrace build --context &lt;profile&gt;/htrace-context --raw-out demo/c
               <td class="num">${fmtInt(r.est)}</td>
               <td class="num">${fmtInt(r.truth)}</td>
               <td class="num ${bad ? 'dev-bad' : ''}">${r.dev === null || r.dev === undefined ? '—' : fmtPct(r.dev)}</td>
-              <td class="dim">${r.has_raw ? '✓' : '—'}</td>
+              <td class="dim">${r.has_raw ? (r.personal_redacted ? '✓ 部分脱敏' : '✓') : '—'}</td>
             </tr>`;
           }).join('')}
         </tbody>

@@ -89,3 +89,10 @@ build says so in `prior_only`.
   all of them. The public demo uses it: monitor's prompt is published, product's (which carries
   memory notes) only contributes sizes.
 * `--redact` runs the same scrubbing over the context document and the sidecar.
+* **Agent memory and user-profile bodies never ship.** `MEMORY (your personal notes)` and
+  `USER PROFILE (who the user is)` sections keep their heading and `[x/y chars]` annotation, but the
+  body is replaced with `（已脱敏 · N 字符的 agent 记忆正文不随演示发布）` before the per-segment cap is
+  applied (`--raw-include-personal` opts out). Rationale: the demo is public and rebuilt from a live
+  prompt, so anything written into memory later would publish itself; the rule removes the judgement
+  call. Effect on the last run: 3.4k–5.4k chars dropped per raw request, `context.personal_notes =
+  "replaced-by-size"`, and the drawer's 原文 column marks those rows `✓ 部分脱敏`.

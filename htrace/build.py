@@ -153,6 +153,7 @@ def build_document(
     raw_context_paths: Optional[List[str]] = None,
     raw_keep: int = 50,
     raw_out: Optional[Path] = None,
+    scrub_personal: bool = True,
 ) -> Dict[str, Any]:
     discovered = state_db.discover_homes(homes)
     if homes and not discovered:
@@ -263,6 +264,7 @@ def build_document(
     if context_paths:
         ctx_doc, raw_doc = context_mod.build(
             context_paths, raw_paths=raw_context_paths, raw_keep=raw_keep, apply_redaction=apply_redaction,
+            scrub_personal_on=scrub_personal,
             env_values=env_values, home_names=home_names,
         )
         doc["context"] = ctx_doc

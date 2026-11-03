@@ -33,6 +33,7 @@ def _cmd_build(args: argparse.Namespace) -> int:
         raw_context_paths=args.raw_context or None,
         raw_keep=args.raw_keep,
         raw_out=(Path(args.raw_out).expanduser() if args.raw_out else None),
+        scrub_personal=not args.raw_include_personal,
     )
     out = Path(args.out).expanduser()
     build_mod.write_document(doc, out, as_demo_js=args.demo_js)
@@ -155,6 +156,8 @@ def main(argv: list[str] | None = None) -> int:
     p_build.add_argument("--env", default=None, help="explicit .env to harvest secret values from")
     p_build.add_argument("--context", action="append",
                          help="htrace-context store (dir or JSONL, repeatable) for the 上下文 view")
+    p_build.add_argument("--raw-include-personal", action="store_true",
+                        help="publish agent memory / user-profile text as well (default: bodies replaced by size notes)"),
     p_build.add_argument("--raw-context", action="append",
                          help="only these context stores may contribute raw text (default: same as --context)")
     p_build.add_argument("--raw-keep", type=int, default=50, help="how many recent requests keep raw text")
