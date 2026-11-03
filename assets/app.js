@@ -363,7 +363,7 @@
     `;
     $('#back-sessions').onclick = () => { state.sessionId = null; setView('sessions'); };
     const toCtxSession = $('#to-ctx-session');
-    if (toCtxSession) toCtxSession.onclick = () => gotoCtx(reqs[reqs.length - 1].k);
+    if (toCtxSession) toCtxSession.onclick = () => gotoCtx(reqs[0].k);   // 从会话开头那一轮进
     box.querySelectorAll('[data-req]').forEach((el) => {
       el.onclick = (e) => { e.stopPropagation(); gotoCtx(el.dataset.req); };
     });
