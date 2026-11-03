@@ -8,7 +8,7 @@
   const log = (m) => { out.textContent += '\n' + m; };
   const sid = new URLSearchParams(location.search).get('sid') || '20261103_145330_88bded';
   const fr = document.getElementById('fr');
-  fr.src = 'index.html#sessions/' + sid;
+  fr.src = '../index.html#sessions/' + sid;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const win = () => fr.contentWindow;
   const doc = () => fr.contentDocument;
