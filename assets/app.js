@@ -1091,6 +1091,9 @@ python -m htrace build --context &lt;profile&gt;/htrace-context --raw-out demo/c
     const info = toolInfo(call.name);
     const argTxt = argsText(call);
     const resTxt = call.result || '';
+    /* 工具失败时 error 字段只有一句「tool reported an error」，真正的原因在结果里的 exit_code / stderr */
+    let exitCode = null;
+    try { const j = JSON.parse(resTxt); if (j && typeof j.exit_code === 'number') exitCode = j.exit_code; } catch (e) { /* 不是 JSON 就算了 */ }
     openDrawer('tool call', call.name, `
       <dl class="kv">
         <dt>状态</dt><dd><span class="pill ${call.status}">${call.status}</span>${call.source === 'hook' ? ' <span class="pill hook">live</span>' : ''}</dd>
@@ -1101,6 +1104,8 @@ python -m htrace build --context &lt;profile&gt;/htrace-context --raw-out demo/c
         <dt>turn / seq</dt><dd class="mono">${call.turn ?? '—'} / ${call.seq}</dd>
         <dt>call_id</dt><dd class="mono" style="font-size:11px;word-break:break-all">${esc(call.call_id || '—')}</dd>
         <dt>数据量</dt><dd class="mono">args ${fmtInt(call.args_bytes)} B · result ${fmtInt(call.result_bytes)} B</dd>
+        ${call.error ? `<dt>错误</dt><dd class="mono" style="color:var(--bad)">${esc(call.error)}</dd>` : ''}
+        ${exitCode !== null ? `<dt>退出码</dt><dd class="mono" style="color:${exitCode === 0 ? 'inherit' : 'var(--bad)'}">${exitCode}</dd>` : ''}
         ${(() => {
           const r = ctxCallIndex().get(call.call_id);
           return r ? `<dt>这一轮</dt><dd><button class="mini-btn" id="to-ctx">上下文 ${fmtInt(r.est)} tok · 第 ${r.n} 次请求</button></dd>` : '';
