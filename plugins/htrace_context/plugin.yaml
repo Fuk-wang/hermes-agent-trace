@@ -1,0 +1,7 @@
+name: htrace-context
+version: 1.0.0
+description: "Per-request prompt composition capture for htrace: six context categories, calibrated token estimates, last-50 raw store."
+author: "htrace (Fuk-wang/hermes-agent-trace)"
+hooks:
+  - pre_api_request
+  - post_api_request

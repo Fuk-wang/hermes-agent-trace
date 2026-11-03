@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from . import SCHEMA, __version__
+from . import context as context_mod
 from . import hooks_jsonl, redact, source_index, state_db
 
 
@@ -148,6 +149,10 @@ def build_document(
     source_root: Optional[str] = None,
     apply_redaction: bool = False,
     env_path: Optional[str] = None,
+    context_paths: Optional[List[str]] = None,
+    raw_context_paths: Optional[List[str]] = None,
+    raw_keep: int = 50,
+    raw_out: Optional[Path] = None,
 ) -> Dict[str, Any]:
     discovered = state_db.discover_homes(homes)
     if homes and not discovered:
@@ -247,12 +252,28 @@ def build_document(
         "subagents": _subagent_edges(loaded),
     }
 
+    env_values: List[str] = []
+    home_names = redact.default_home_names()
     if apply_redaction:
-        env_values: List[str] = []
         for home in loaded:
             env_values.extend(redact.load_env_values(Path(home["home"]) / ".env"))
-        doc, stats = redact.redact_document(doc, env_values, redact.default_home_names())
+        doc, stats = redact.redact_document(doc, env_values, home_names)
         doc["source"]["redaction_stats"] = stats
+
+    if context_paths:
+        ctx_doc, raw_doc = context_mod.build(
+            context_paths, raw_paths=raw_context_paths, raw_keep=raw_keep, apply_redaction=apply_redaction,
+            env_values=env_values, home_names=home_names,
+        )
+        doc["context"] = ctx_doc
+        if apply_redaction and ctx_doc.get("source", {}).get("redaction_stats"):
+            stats = dict(doc["source"].get("redaction_stats") or {})
+            for k, v in ctx_doc["source"]["redaction_stats"].items():
+                stats[k] = stats.get(k, 0) + v
+            doc["source"]["redaction_stats"] = stats
+        if raw_out is not None:
+            context_mod.write_raw(raw_doc, Path(raw_out),
+                                  as_demo_js=str(raw_out).endswith(".js"))
     return doc
 
 

@@ -96,3 +96,11 @@ trace.json  →  index.html + assets/app.js（纯前端渲染，无网络请求�
 cctrace 抓 TLS 是为了看「发出去的请求原文」。Hermes 这边 `state.db` 已经保存了
 工具调用与结果，`request_dump_*.json` 在报错时保存完整请求体，所以不需要证书、不需要改
 `base_url`、不需要接管流量。要看每次 API 请求的耗时与用量，用 `post_api_request` hook 即可。
+
+## 上下文视图（Context）
+
+第六个数据源：`plugins/htrace_context/` 订阅 `pre_api_request` / `post_api_request`，把每次请求的
+六类尺寸与真实 usage 写进 `<HERMES_HOME>/htrace-context/`。`htrace/context.py` 负责配对、拟合
+chars/token（CJK 单独一条）、做留一交叉验证，并把「尺寸」与「原文」拆成两份产物：
+`trace.json.context` 只有尺寸与摘要，原文走 `--raw-out` 侧车、只留最近 50 条。
+细节（为什么用插件、两类口径陷阱、隐私边界）：`docs/CONTEXT.md`。

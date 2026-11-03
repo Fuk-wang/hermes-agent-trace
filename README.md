@@ -16,8 +16,9 @@ htrace 把 Hermes Agent 的一次或多次会话，还原成可点开、可核�
 | 部分 | 作用 | 依赖 |
 | --- | --- | --- |
 | `htrace/`（Python，纯标准库） | 读 `state.db`、读 hook JSONL、扫源码生成工具索引，产出 `trace.json` | Python 3.10+ |
-| 仓库根目录的静态站 | 渲染 `trace.json`：总览 / 会话 / 工具调用 / 时间线 / 成本 / 子代理 / 源码索引 / 原始数据 | 任何浏览器，零 CDN、离线可用 |
+| 仓库根目录的静态站 | 渲染 `trace.json`：总览 / 会话 / 工具调用 / 上下文 / 时间线 / 成本 / 子代理 / 源码索引 / 原始数据 | 任何浏览器，零 CDN、离线可用 |
 | `hooks/` | 可选：把实时事件写进 JSONL，再合并进 trace | Hermes shell hooks |
+| `plugins/htrace_context/` | 可选：采样每次请求的六类上下文尺寸（+最后 50 条原文） | Hermes 插件（`pre_api_request` / `post_api_request`） |
 
 ## 快速开始（离线）
 

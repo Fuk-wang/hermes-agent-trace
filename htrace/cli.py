@@ -29,6 +29,10 @@ def _cmd_build(args: argparse.Namespace) -> int:
         source_root=args.source,
         apply_redaction=args.redact,
         env_path=args.env,
+        context_paths=args.context or None,
+        raw_context_paths=args.raw_context or None,
+        raw_keep=args.raw_keep,
+        raw_out=(Path(args.raw_out).expanduser() if args.raw_out else None),
     )
     out = Path(args.out).expanduser()
     build_mod.write_document(doc, out, as_demo_js=args.demo_js)
@@ -43,6 +47,15 @@ def _cmd_build(args: argparse.Namespace) -> int:
         print(f"  redaction: {doc['source'].get('redaction_stats')}")
     if doc["source"].get("hook_calls_merged"):
         print(f"  hook calls merged: {doc['source']['hook_calls_merged']}")
+    ctx = doc.get("context")
+    if ctx:
+        cal = ctx["calibration"]
+        dev = cal.get("deviation") or {}
+        print(f"  context: {ctx['totals']['requests']} requests · calibrated on {cal['n']}"
+              f" · median dev {dev.get('median', 0) * 100:.1f}% · max {dev.get('max', 0) * 100:.1f}%"
+              f" · {'OK' if cal.get('ok') else 'ESTIMATED'}")
+        if cal.get("prior_only"):
+            print(f"  note: prior-dominated coefficients (no variance in sample): {', '.join(cal['prior_only'])}")
     missing = [s["id"] for s in doc["sessions"] if not s["stats"]["calls"] and s["message_count"] > 2]
     if missing:
         print(f"  note: {len(missing)} session(s) had messages but no tool calls")
@@ -69,6 +82,19 @@ def _cmd_stats(args: argparse.Namespace) -> int:
     top = sorted(doc.get("by_tool", {}).items(), key=lambda kv: kv[1]["calls"], reverse=True)[:10]
     for name, st in top:
         print(f"    {name:<24} calls={st['calls']:<5} errors={st['errors']:<3} ms={st['ms']}")
+    return 0
+
+
+def _cmd_plugin(args: argparse.Namespace) -> int:
+    from . import plugin_install
+    home = Path(args.home).expanduser() if args.home else plugin_install._default_home()
+    if args.install:
+        return plugin_install.install(home, dry_run=args.dry_run)
+    if args.remove:
+        return plugin_install.remove(home, purge_data=args.purge_data, dry_run=args.dry_run)
+    st = plugin_install.status(home)
+    for k, v in st.items():
+        print(f"{k:<15} {v}")
     return 0
 
 
@@ -127,6 +153,13 @@ def main(argv: list[str] | None = None) -> int:
     p_build.add_argument("--source", default=None, help="Hermes source tree for the tool->source index")
     p_build.add_argument("--redact", action="store_true", help="scrub secrets, home paths, e-mails")
     p_build.add_argument("--env", default=None, help="explicit .env to harvest secret values from")
+    p_build.add_argument("--context", action="append",
+                         help="htrace-context store (dir or JSONL, repeatable) for the 上下文 view")
+    p_build.add_argument("--raw-context", action="append",
+                         help="only these context stores may contribute raw text (default: same as --context)")
+    p_build.add_argument("--raw-keep", type=int, default=50, help="how many recent requests keep raw text")
+    p_build.add_argument("--raw-out", default=None,
+                         help="write the raw-text sidecar here (`*.js` -> window.HTRACE_CTX_RAW)")
     p_build.add_argument("--demo-js", action="store_true", help="emit `window.HTRACE_DEMO = ...`")
     p_build.set_defaults(func=_cmd_build)
 
@@ -142,6 +175,14 @@ def main(argv: list[str] | None = None) -> int:
     p_homes = sub.add_parser("homes", help="list discoverable Hermes homes")
     p_homes.add_argument("--home", action="append")
     p_homes.set_defaults(func=_cmd_homes)
+
+    p_plugin = sub.add_parser("plugin", help="install/remove the htrace-context plugin in one Hermes home")
+    p_plugin.add_argument("--home", default=None, help="Hermes home / profile dir (default: this machine's default profile)")
+    p_plugin.add_argument("--install", action="store_true")
+    p_plugin.add_argument("--remove", action="store_true")
+    p_plugin.add_argument("--purge-data", action="store_true", help="with --remove: also delete the captured JSONL")
+    p_plugin.add_argument("--dry-run", action="store_true")
+    p_plugin.set_defaults(func=_cmd_plugin)
 
     p_serve = sub.add_parser("serve", help="serve the viewer locally (+ reserved /api/trace)")
     p_serve.add_argument("--dir", default=".")

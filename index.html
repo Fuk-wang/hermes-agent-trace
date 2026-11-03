@@ -24,11 +24,12 @@
       <button class="nav-item is-active" data-view="overview"><span class="k">1</span>总览</button>
       <button class="nav-item" data-view="sessions"><span class="k">2</span>会话</button>
       <button class="nav-item" data-view="calls"><span class="k">3</span>工具调用</button>
-      <button class="nav-item" data-view="timeline"><span class="k">4</span>时间线</button>
-      <button class="nav-item" data-view="cost"><span class="k">5</span>成本</button>
-      <button class="nav-item" data-view="subagents"><span class="k">6</span>子代理</button>
-      <button class="nav-item" data-view="source"><span class="k">7</span>源码索引</button>
-      <button class="nav-item" data-view="raw"><span class="k">8</span>原始数据</button>
+      <button class="nav-item" data-view="context"><span class="k">4</span>上下文</button>
+      <button class="nav-item" data-view="timeline"><span class="k">5</span>时间线</button>
+      <button class="nav-item" data-view="cost"><span class="k">6</span>成本</button>
+      <button class="nav-item" data-view="subagents"><span class="k">7</span>子代理</button>
+      <button class="nav-item" data-view="source"><span class="k">8</span>源码索引</button>
+      <button class="nav-item" data-view="raw"><span class="k">9</span>原始数据</button>
     </nav>
 
     <div class="rail-foot">
@@ -37,7 +38,7 @@
         <input type="file" id="file-input" accept=".json,application/json" hidden>
         打开 trace.json
       </label>
-      <p class="tiny">键盘：<b>1-8</b> 切页 · <b>/</b> 搜索 · <b>j/k</b> 移动 · <b>Enter</b> 展开 · <b>Esc</b> 关闭</p>
+      <p class="tiny">键盘：<b>1-9</b> 切页 · <b>/</b> 搜索 · <b>j/k</b> 移动 · <b>Enter</b> 展开 · <b>Esc</b> 关闭</p>
     </div>
   </aside>
 
@@ -60,6 +61,7 @@
     <section class="view" id="view-overview"></section>
     <section class="view" id="view-sessions" hidden></section>
     <section class="view" id="view-calls" hidden></section>
+    <section class="view" id="view-context" hidden></section>
     <section class="view" id="view-timeline" hidden></section>
     <section class="view" id="view-cost" hidden></section>
     <section class="view" id="view-subagents" hidden></section>

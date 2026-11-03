@@ -77,6 +77,7 @@
     overview: ['总览', '所有会话的工具调用活动、错误与成本'],
     sessions: ['会话', '按会话看工具使用构成与耗时'],
     calls: ['工具调用', '每一次调用的参数、结果、耗时与源码位置'],
+    context: ['上下文', '每次请求的六类上下文构成，token 由真实 usage 校准'],
     timeline: ['时间线', '单个会话里调用发生在什么时候、间隔多久'],
     cost: ['成本', 'token、缓存命中与估算花费'],
     subagents: ['子代理', '委派出去的父子会话链路'],
@@ -129,6 +130,7 @@
       case 'overview': renderOverview(); break;
       case 'sessions': state.sessionId ? renderSessionDetail(state.sessionId) : renderSessions(); break;
       case 'calls': renderCalls(); break;
+      case 'context': renderContext(); break;
       case 'timeline': renderTimeline(); break;
       case 'cost': renderCost(); break;
       case 'subagents': renderSubagents(); break;
@@ -670,6 +672,244 @@
     });
   }
 
+  /* ---------------- context ---------------- */
+  /* 六类上下文：sys / injected / tools / user / assistant / tool。
+     尺寸来自 htrace-context 插件；token 是按类别拟合出来的估计值，逐条带偏差。 */
+  const CTX_SEG = [
+    ['sys', 'system prompt'],
+    ['injected', '注入 · memory/skills/env'],
+    ['tools', 'tool schemas'],
+    ['user', '用户消息'],
+    ['assistant', '助手消息'],
+    ['tool', '工具结果'],
+  ];
+  const CTX_LABEL = Object.fromEntries(CTX_SEG);
+
+  function ctxData() {
+    return state.doc && state.doc.context ? state.doc.context : null;
+  }
+
+  function ctxSessionTitle(id) {
+    const s = (state.doc.sessions || []).find((x) => x.id === id);
+    return s ? (s.title || s.id) : (id || '—');
+  }
+
+  /* 原文侧车按需加载：打开抽屉时才拉 demo/context.raw.js（file:// 下 script 标签可用，fetch 不行） */
+  function ensureCtxRaw(cb) {
+    if (window.HTRACE_CTX_RAW) { cb(window.HTRACE_CTX_RAW); return; }
+    if (ensureCtxRaw._failed) { cb(null); return; }
+    const s = document.createElement('script');
+    s.src = 'demo/context.raw.js';
+    s.onload = () => cb(window.HTRACE_CTX_RAW || null);
+    s.onerror = () => { ensureCtxRaw._failed = true; cb(null); };
+    document.head.appendChild(s);
+  }
+
+  function ctxReqByKey(key) {
+    const ctx = ctxData();
+    return ctx ? (ctx.requests || []).find((r) => r.k === key) : null;
+  }
+
+  function renderContext() {
+    const box = $('#view-context');
+    const ctx = ctxData();
+    if (!ctx || !(ctx.requests || []).length) {
+      box.innerHTML = `
+        <div class="empty">
+          <p>还没有上下文数据。</p>
+          <p class="tiny">这一页靠 <code>htrace-context</code> 插件在会话期间采样，装好后再重建 trace：</p>
+          <pre class="code">python -m htrace plugin --install --home &lt;profile 目录&gt;
+python -m htrace build --context &lt;profile&gt;/htrace-context --raw-out demo/context.raw.js</pre>
+          <p class="tiny">插件只记尺寸与摘要；原文单独存储，只保留最近 50 条请求。</p>
+        </div>`;
+      return;
+    }
+    const cal = ctx.calibration || {};
+    const dev = cal.deviation || {};
+    const tot = ctx.totals || {};
+    const ok = !!cal.ok;
+    const priorOnly = cal.prior_only || [];
+    const reqs = ctx.requests.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    if (!state.ctxKey || !reqs.some((r) => r.k === state.ctxKey)) state.ctxKey = reqs[0].k;
+
+    box.innerHTML = `
+      <div class="grid cards">
+        <div class="card accent">
+          <div class="label">请求</div>
+          <div class="value">${fmtInt(tot.requests)}</div>
+          <div class="hint">${fmtInt(tot.sessions)} 个会话 · 校准样本 ${fmtInt(cal.n)}</div>
+        </div>
+        <div class="card">
+          <div class="label">估算 token</div>
+          <div class="value">${fmtInt(tot.est_tokens)}</div>
+          <div class="hint">真实 ${fmtInt(tot.true_tokens)}</div>
+        </div>
+        <div class="card">
+          <div class="label">中位偏差</div>
+          <div class="value">${fmtPct(dev.median)}</div>
+          <div class="hint">p90 ${fmtPct(dev.p90)} · 最大 ${fmtPct(dev.max)}</div>
+        </div>
+        <div class="card ${ok ? 'ok' : 'warn'}">
+          <div class="label">校准状态</div>
+          <div class="value" style="font-size:16px">${ok ? '已校准 &lt;5%' : 'ESTIMATED'}</div>
+          <div class="hint">${ok ? '逐条偏差见下表' : '最大偏差超过 5%，条形按估算画'}</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="calnote">
+          <b>${ok ? '已校准。' : '估算值。'}</b>
+          每类一个 chars/token 系数，由 <code>pre_api_request</code> 的分段尺寸与
+          <code>post_api_request</code> 的 <code>prompt_tokens</code> 逐条拟合：
+          ${CTX_SEG.map(([k]) => {
+            const c = (cal.categories || {})[k] || {};
+            return `<span class="coef">${k} <b>${c.chars_per_token ? c.chars_per_token.toFixed(2) : '—'}</b></span>`;
+          }).join('')}
+          <span class="coef">CJK <b>${cal.cjk_chars_per_token ? Number(cal.cjk_chars_per_token).toFixed(2) : '—'}</b></span>
+          ${priorOnly.length ? `<div class="warnchip">先验主导：${esc(priorOnly.join(', '))} —— 这些类别在样本内没有变化，系数无法单独识别</div>` : ''}
+          ${(cal.cv && cal.cv.max !== undefined) ? `<div class="tiny dim" style="margin-top:6px">留一交叉验证：中位 ${fmtPct(cal.cv.median)} · p90 ${fmtPct(cal.cv.p90)} · 最大 ${fmtPct(cal.cv.max)}（${fmtInt(cal.cv.n)} 折）</div>` : ''}
+          ${cal.note ? `<div class="tiny dim" style="margin-top:6px">${esc(cal.note)}</div>` : ''}
+        </div>
+      </div>
+
+      <div class="section-title">请求 · 按时间倒序</div>
+      <div class="panel"><div class="tablewrap" style="max-height:300px"><table>
+        <thead><tr><th>时间</th><th>会话</th><th class="num">#</th><th class="num">chars</th>
+          <th class="num">估算</th><th class="num">真实</th><th class="num">偏差</th><th>原文</th></tr></thead>
+        <tbody id="ctx-body">
+          ${reqs.map((r) => {
+            const bad = r.dev !== null && r.dev !== undefined && r.dev > 0.05;
+            const t = r.ts ? new Date(r.ts * 1000).toLocaleTimeString('zh-CN', { hour12: false }) : '—';
+            return `<tr data-key="${esc(r.k)}" class="${r.k === state.ctxKey ? 'is-sel' : ''}">
+              <td class="mono dim">${esc(t)}</td>
+              <td>${esc(clip(ctxSessionTitle(r.session), 30))}</td>
+              <td class="num mono dim">${r.n ?? '—'}</td>
+              <td class="num">${fmtInt(Object.values(r.chars || {}).reduce((a, b) => a + b, 0))}</td>
+              <td class="num">${fmtInt(r.est)}</td>
+              <td class="num">${fmtInt(r.truth)}</td>
+              <td class="num ${bad ? 'dev-bad' : ''}">${r.dev === null || r.dev === undefined ? '—' : fmtPct(r.dev)}</td>
+              <td class="dim">${r.has_raw ? '✓' : '—'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table></div></div>
+
+      <div id="ctx-detail"></div>
+    `;
+
+    box.querySelectorAll('#ctx-body tr[data-key]').forEach((tr) => {
+      tr.onclick = () => {
+        state.ctxKey = tr.dataset.key;
+        box.querySelectorAll('#ctx-body tr').forEach((x) => x.classList.toggle('is-sel', x === tr));
+        renderCtxDetail();
+      };
+    });
+    renderCtxDetail();
+  }
+
+  function renderCtxDetail() {
+    const host = $('#ctx-detail');
+    if (!host) return;
+    const ctx = ctxData();
+    const req = ctxReqByKey(state.ctxKey);
+    if (!ctx || !req) { host.innerHTML = ''; return; }
+    const toks = req.tokens || {};
+    const charsAll = Object.values(req.chars || {}).reduce((a, b) => a + b, 0);
+    const total = Object.values(toks).reduce((a, b) => a + b, 0) || 1;
+    const estimated = !(ctx.calibration || {}).ok;
+
+    host.innerHTML = `
+      <div class="section-title">这一条请求的构成
+        <span class="dim" style="font-weight:400;font-size:11px">· ${esc(clip(ctxSessionTitle(req.session), 40))} · 第 ${req.n ?? '—'} 次请求 · ${esc(req.model || '')}</span>
+      </div>
+      <div class="panel">
+        <div class="segbar">
+          ${CTX_SEG.map(([k, label]) => {
+            const v = toks[k] || 0;
+            if (!v) return '';
+            return `<div class="seg seg-${k}" style="flex:${v}" title="${esc(label)} · ${fmtInt(v)} tokens（${fmtPct(v / total)}）"></div>`;
+          }).join('')}
+        </div>
+        <div class="seglegend">
+          ${CTX_SEG.map(([k, label]) => `
+            <button class="lg" data-cat="${k}"><span class="dot dot-${k}"></span>${esc(label)}
+              <b>${fmtPct((toks[k] || 0) / total)}</b></button>`).join('')}
+        </div>
+
+        <div class="tablewrap"><table>
+          <thead><tr><th>类别</th><th class="num">chars</th><th class="num">tokens</th>
+            <th class="num">占比(按 token)</th><th class="num">占比(按 chars)</th><th></th></tr></thead>
+          <tbody>
+            ${CTX_SEG.map(([k, label]) => {
+              const ch = (req.chars || {})[k] || 0;
+              const tk = toks[k] || 0;
+              return `<tr>
+                <td><span class="dot dot-${k}"></span>${esc(label)}</td>
+                <td class="num">${fmtInt(ch)}</td>
+                <td class="num">${fmtInt(tk)}${estimated ? ' <span class="estchip">est</span>' : ''}</td>
+                <td class="num">${fmtPct(tk / total)}</td>
+                <td class="num dim">${fmtPct(ch / Math.max(1, charsAll))}</td>
+                <td class="num"><button class="mini-btn" data-cat="${k}">看原文</button></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table></div>
+
+        <div class="hstack" style="margin-top:10px">
+          <span class="tiny dim">估算 ${fmtInt(req.est)} · 真实 ${fmtInt(req.truth)} ·
+            偏差 ${req.dev === null || req.dev === undefined ? '—' : fmtPct(req.dev)}</span>
+          <span class="spacer"></span>
+          <span class="tiny dim">${req.has_raw ? '原文已保留' : '原文未保留（只存最近 50 条）'}</span>
+        </div>
+
+        ${(req.sections || []).length ? `
+          <div class="subhead" style="margin-top:14px">system prompt 分块</div>
+          <div class="sectionslist">
+            ${req.sections.map((s) => `<div class="secrow">
+              <span class="pill ${s.k === 'injected' ? 'warn' : ''}">${esc(s.k)}</span>
+              <span class="mono dim">${fmtInt(s.chars)} B</span>
+              <span>${esc(s.heading || '(preamble)')}</span></div>`).join('')}
+          </div>` : ''}
+      </div>
+    `;
+
+    host.querySelectorAll('button[data-cat]').forEach((b) => {
+      b.onclick = () => openCtxSegment(req, b.dataset.cat);
+    });
+  }
+
+  function openCtxSegment(req, cat) {
+    const label = CTX_LABEL[cat] || cat;
+    openDrawer('context · ' + cat, label, `<div class="note">正在读取原文…</div>`);
+    ensureCtxRaw((raw) => {
+      const body = $('#drawer-body');
+      const chars = (req.chars || {})[cat] || 0;
+      const toks = (req.tokens || {})[cat] || 0;
+      const head = `<dl class="kv">
+        <dt>字符数</dt><dd class="mono">${fmtInt(chars)}</dd>
+        <dt>估算 token</dt><dd class="mono">${fmtInt(toks)}${(ctxData().calibration || {}).ok ? '' : ' <span class="estchip">est</span>'}</dd>
+        <dt>请求</dt><dd class="mono">${esc(clip(ctxSessionTitle(req.session), 36))} · #${req.n ?? '—'}</dd>
+      </dl>`;
+      if (!raw) {
+        body.innerHTML = head + `<div class="note">原文侧车没有加载（<code>demo/context.raw.js</code> 不存在）。<br>
+          只有最近 50 条请求保留原文；更早的请求只有尺寸与摘要。</div>`;
+        return;
+      }
+      const rec = (raw.requests || {})[req.k];
+      const seg = rec && rec.segments ? rec.segments[cat] : null;
+      if (!seg || !seg.text) {
+        body.innerHTML = head + `<div class="note">这一类的原文没有保留：不在最近 ${raw.keep || 50} 条请求里，或该类在这个请求里为空。</div>`;
+        return;
+      }
+      body.innerHTML = head + `
+        <div class="subhead">原文${seg.truncated ? `（已截断到 ${fmtInt(seg.text.length)} 字符）` : ''}</div>
+        <pre class="code rawtext">${esc(seg.text)}</pre>
+        <div class="hstack"><button class="mini-btn" id="copy-ctx-seg">复制这一段</button></div>`;
+      const b = $('#copy-ctx-seg');
+      if (b) b.onclick = () => copy(seg.text);
+    });
+  }
+
   /* ---------------- raw ---------------- */
   function renderRaw() {
     const box = $('#view-raw');
@@ -792,7 +1032,7 @@
     }
     if (typing) return;
     if (e.key === '/') { e.preventDefault(); $('#search').focus(); return; }
-    if (/^[1-8]$/.test(e.key)) { setView(Object.keys(VIEWS)[Number(e.key) - 1]); return; }
+    if (/^[1-9]$/.test(e.key)) { setView(Object.keys(VIEWS)[Number(e.key) - 1]); return; }
     if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); moveCursor(1); return; }
     if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); moveCursor(-1); return; }
     if (e.key === 'Enter' && state.rows[state.cursor]) { state.rows[state.cursor].click(); return; }
@@ -883,6 +1123,13 @@
 
   function enterRoute() {
     const route = (location.hash || '#overview').slice(1).split('/');
+    /* 深链：#context/<请求 key>[/<类别>] 直接选中一条请求，必要时打开该段原文 */
+    if (route[0] === 'context' && route[1]) {
+      state.ctxKey = decodeURIComponent(route[1]);
+      setView('context', { push: false });
+      if (route[2]) openCtxSegment(ctxReqByKey(state.ctxKey), decodeURIComponent(route[2]));
+      return;
+    }
     if (route[1]) state.sessionId = decodeURIComponent(route[1]);
     setView(route[0] || 'overview', { push: false });
   }
