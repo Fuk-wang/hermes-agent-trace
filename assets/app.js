@@ -289,6 +289,7 @@
     const maxCalls = byTool.length ? byTool[0][1].calls : 1;
     const calls = s.calls.slice().reverse();
     const reqs = ctxReqsOfSession(s.id);
+    const hasCtx = reqs.length > 0;   // 没装插件的历史会话：不摆一列全是「—」的请求列
     const reqOf = new Map();
     s.calls.forEach((c) => { const r = reqForCall(c, reqs); if (r) reqOf.set(c.call_id, r); });
 
@@ -310,8 +311,8 @@
         <div class="panel">
           <div class="panel-head"><h3>调用记录</h3><span class="meta">${calls.length} 条 · 倒序</span></div>
           <div class="tablewrap" style="max-height:520px"><table class="fixed">
-            <colgroup><col style="width:40px"><col style="width:84px"><col style="width:118px"><col style="width:68px"><col style="width:70px"><col style="width:64px"><col></colgroup>
-            <thead><tr><th>#</th><th>时间</th><th>工具</th><th class="num">耗时</th><th>状态</th><th>请求</th><th>参数</th></tr></thead>
+            <colgroup><col style="width:40px"><col style="width:84px"><col style="width:118px"><col style="width:68px"><col style="width:70px">${hasCtx ? '<col style="width:64px">' : ''}<col></colgroup>
+            <thead><tr><th>#</th><th>时间</th><th>工具</th><th class="num">耗时</th><th>状态</th>${hasCtx ? '<th>请求</th>' : ''}<th>参数</th></tr></thead>
             <tbody>
               ${calls.map((c) => `
                 <tr data-call="${esc(c.call_id)}" data-seq="${c.seq}">
@@ -320,9 +321,9 @@
                   <td class="nowrap"><span class="tool-name">${esc(c.name)}</span></td>
                   <td class="num">${fmtMs(c.duration_ms)}</td>
                   <td><span class="pill ${c.status}">${c.status}</span></td>
-                  <td>${reqOf.has(c.call_id) ? `<button class="mini-btn" data-req="${esc(reqOf.get(c.call_id).k)}">#${reqOf.get(c.call_id).n}</button>` : '<span class="dim">—</span>'}</td>
+                  ${hasCtx ? `<td>${reqOf.has(c.call_id) ? `<button class="mini-btn" data-req="${esc(reqOf.get(c.call_id).k)}">#${reqOf.get(c.call_id).n}</button>` : '<span class="dim">—</span>'}</td>` : ''}
                   <td><div class="preview">${esc(clip(argsOneLine(c), 80))}</div></td>
-                </tr>`).join('') || '<tr><td colspan="7" class="empty">这个会话没有工具调用</td></tr>'}
+                </tr>`).join('') || '<tr><td colspan="${hasCtx ? 7 : 6}" class="empty">这个会话没有工具调用</td></tr>'}
             </tbody>
           </table></div>
         </div>

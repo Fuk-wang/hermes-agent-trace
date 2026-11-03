@@ -86,8 +86,8 @@ build says so in `prior_only`.
 * The plugin prunes its own `raw/` to 50 files at write time, so a long-running profile does not
   accumulate prompt text on disk.
 * `--raw-context <store>` restricts which stores may contribute raw text while still calibrating on
-  all of them. The public demo uses it: monitor's prompt is published, product's (which carries
-  memory notes) only contributes sizes.
+  all of them. The public demo uses it: monitor's prompt is published; product's and the default
+  profile's requests contribute sizes and section headings only.
 * `--redact` runs the same scrubbing over the context document and the sidecar.
 * **Agent memory and user-profile bodies never ship.** `MEMORY (your personal notes)` and
   `USER PROFILE (who the user is)` sections keep their heading and `[x/y chars]` annotation, but the

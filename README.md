@@ -129,6 +129,9 @@ python -m htrace build --out trace.json --source "<hermes-agent>" \
 - CI：`tests.yml` 跑 ubuntu+windows × py3.10/3.11/3.12 共 6 个 job，首次运行全绿，README 挂徽章
 - 会话页也能进请求：每次调用带 `#K` 芯片、右栏列出该会话的请求、顶部「这个会话的 N 次请求」；
   会话内 10 个有上下文数据的会话，15 次调用全部挂到请求上（0 条漏配）
+- 插件已装到三个 profile（default / monitor / product）。default 只贡献尺寸与摘要——`--raw-context`
+  仍只放 monitor 的原文；演示里新会话（如 `20261103_160636_2a8679`）的 2 次调用全部挂到请求上
+- 没有 context 数据的历史会话不再摆一列全是「—」的请求列，改为整列隐藏
 - 跳转可回退：`setView` 改 pushState，popstate/hashchange 走 enterRoute；`tests/nav_harness.html`
   用真点击跑通「会话→请求→浏览器后退→调用抽屉→请求」三步，均 PASS
 
