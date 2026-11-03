@@ -759,7 +759,7 @@ python -m htrace build --context &lt;profile&gt;/htrace-context --raw-out demo/c
       <div class="panel">
         <div class="calnote">
           <b>${ok ? '已校准。' : '估算值。'}</b>
-          每类一个 chars/token 系数，由 <code>pre_api_request</code> 的分段尺寸与
+          表内 token 全部是拟合值（provider 只回总量，不给逐段计数）。每类一个 chars/token 系数，由 <code>pre_api_request</code> 的分段尺寸与
           <code>post_api_request</code> 的 <code>prompt_tokens</code> 逐条拟合：
           ${CTX_SEG.map(([k]) => {
             const c = (cal.categories || {})[k] || {};
@@ -837,7 +837,7 @@ python -m htrace build --context &lt;profile&gt;/htrace-context --raw-out demo/c
         </div>
 
         <div class="tablewrap"><table>
-          <thead><tr><th>类别</th><th class="num">chars</th><th class="num">tokens</th>
+          <thead><tr><th>类别</th><th class="num">chars</th><th class="num">tokens（估算）</th>
             <th class="num">占比(按 token)</th><th class="num">占比(按 chars)</th><th></th></tr></thead>
           <tbody>
             ${CTX_SEG.map(([k, label]) => {
