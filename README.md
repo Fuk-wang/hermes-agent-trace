@@ -123,6 +123,10 @@ python -m htrace build --out trace.json --source "<hermes-agent>" \
   记忆/档案正文，抽屉里只剩段头 + `（已脱敏 · 2,130 字符…）` 占位
 - 测试：`python -m unittest discover -s tests` → 17 tests OK
 - 渲染：无头 Chrome 打开 `#context` → 16 行请求、六段堆叠条 6/6；深链 `#context/<key>/<类>` 直开抽屉
+- 请求 ↔ 工具调用双向跳转：`link_calls()` 按会话内时间窗配对（`state.db` 没有 `api_request_id`），
+  16 条请求里 6 条连到 8 次调用；详情页列出「这一轮调了 N 个工具」，调用抽屉给「上下文 N tok · 第 K 次请求」
+- 原文按需展开：侧车单段上限 40k，抽屉首屏 6k + 「展开剩余」，侧车 329 KiB / gzip 86 KiB
+- CI：`tests.yml` 跑 ubuntu+windows × py3.10/3.11/3.12 共 6 个 job，首次运行全绿，README 挂徽章
 
 ## 目录
 
