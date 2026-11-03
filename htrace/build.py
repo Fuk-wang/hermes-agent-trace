@@ -267,7 +267,7 @@ def build_document(
             scrub_personal_on=scrub_personal,
             env_values=env_values, home_names=home_names,
         )
-        doc["context"] = ctx_doc
+        doc["context"] = context_mod.link_calls(ctx_doc, doc.get("sessions") or [])
         if apply_redaction and ctx_doc.get("source", {}).get("redaction_stats"):
             stats = dict(doc["source"].get("redaction_stats") or {})
             for k, v in ctx_doc["source"]["redaction_stats"].items():

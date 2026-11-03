@@ -1,6 +1,6 @@
 # htrace — Hermes Agent 工具调用追踪
 
-[在线演示](https://fuk-wang.github.io/hermes-agent-trace/) · 参考对象：[thevibeworks/cctrace](https://github.com/thevibeworks/cctrace)
+[在线演示](https://fuk-wang.github.io/hermes-agent-trace/) · [![tests](https://github.com/Fuk-wang/hermes-agent-trace/actions/workflows/tests.yml/badge.svg)](https://github.com/Fuk-wang/hermes-agent-trace/actions/workflows/tests.yml) · 参考对象：[thevibeworks/cctrace](https://github.com/thevibeworks/cctrace)
 
 htrace 把 Hermes Agent 的一次或多次会话，还原成可点开、可核验的调用记录：**每一次工具调用**
 的名字、参数、结果、开始时间、耗时、token 开销，以及**真正执行它的源码位置**。

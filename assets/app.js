@@ -720,7 +720,7 @@
           <p class="tiny">这一页靠 <code>htrace-context</code> 插件在会话期间采样，装好后再重建 trace：</p>
           <pre class="code">python -m htrace plugin --install --home &lt;profile 目录&gt;
 python -m htrace build --context &lt;profile&gt;/htrace-context --raw-out demo/context.raw.js</pre>
-          <p class="tiny">插件只记尺寸与摘要；原文单独存储，只保留最近 50 条请求。</p>
+          <p class="tiny">插件只记尺寸与摘要；原文单独存储，只保留最近 ${(ctxData() || {}).raw_keep || 50} 条请求。</p>
         </div>`;
       return;
     }
@@ -860,7 +860,7 @@ python -m htrace build --context &lt;profile&gt;/htrace-context --raw-out demo/c
           <span class="tiny dim">估算 ${fmtInt(req.est)} · 真实 ${fmtInt(req.truth)} ·
             偏差 ${req.dev === null || req.dev === undefined ? '—' : fmtPct(req.dev)}</span>
           <span class="spacer"></span>
-          <span class="tiny dim">${req.has_raw ? '原文已保留' : '原文未保留（只存最近 50 条）'}</span>
+          <span class="tiny dim">${req.has_raw ? '原文已保留' : `原文未保留（只存最近 ${(ctxData() || {}).raw_keep || 50} 条）`}</span>
         </div>
 
         ${(req.sections || []).length ? `
@@ -871,11 +871,37 @@ python -m htrace build --context &lt;profile&gt;/htrace-context --raw-out demo/c
               <span class="mono dim">${fmtInt(s.chars)} B</span>
               <span>${esc(s.heading || '(preamble)')}</span></div>`).join('')}
           </div>` : ''}
+        ${(() => {
+          const ids = req.call_ids || [];
+          if (!ids.length) {
+            return `<div class="subhead" style="margin-top:14px">这一轮没有工具调用</div>
+              <div class="tiny dim">模型在拿到这份上下文后直接作答，没有发起工具调用。</div>`;
+          }
+          const rows = ids.map((id) => {
+            const hit = callLocate(id);
+            if (!hit) return '';
+            const c = hit.call;
+            return `<tr data-call="${esc(id)}">
+              <td class="mono">${esc(c.name)}</td>
+              <td><span class="pill ${esc(c.status)}">${esc(c.status)}</span></td>
+              <td class="num mono dim">${fmtMs(c.duration_ms)}</td>
+              <td class="dim">${esc(clip(c.args_preview || argsOneLine(c) || '', 60))}</td>
+            </tr>`;
+          }).join('');
+          return `<div class="subhead" style="margin-top:14px">这一轮调了 ${ids.length} 个工具</div>
+            <div class="tiny dim">按时间切分：本请求之后、下一请求之前的调用属于这一轮。</div>
+            <div class="tablewrap" style="max-height:220px"><table>
+              <thead><tr><th>工具</th><th>状态</th><th class="num">耗时</th><th>参数</th></tr></thead>
+              <tbody>${rows}</tbody></table></div>`;
+        })()}
       </div>
     `;
 
     host.querySelectorAll('button[data-cat]').forEach((b) => {
       b.onclick = () => openCtxSegment(req, b.dataset.cat);
+    });
+    host.querySelectorAll('tr[data-call]').forEach((tr) => {
+      tr.onclick = () => gotoCall(tr.dataset.call);
     });
   }
 
@@ -893,7 +919,7 @@ python -m htrace build --context &lt;profile&gt;/htrace-context --raw-out demo/c
       </dl>`;
       if (!raw) {
         body.innerHTML = head + `<div class="note">原文侧车没有加载（<code>demo/context.raw.js</code> 不存在）。<br>
-          只有最近 50 条请求保留原文；更早的请求只有尺寸与摘要。</div>`;
+          只有最近 ${(ctxData() || {}).raw_keep || 50} 条请求保留原文；更早的请求只有尺寸与摘要。</div>`;
         return;
       }
       const rec = (raw.requests || {})[req.k];
@@ -973,6 +999,40 @@ python -m htrace build --context &lt;profile&gt;/htrace-context --raw-out demo/c
     if (b) b.onclick = () => copy(`${info.file}:${info.line}`);
   }
 
+  /* ---------------- context <-> call linking ---------------- */
+  function ctxCallIndex() {
+    if (state._ctxCallIdx) return state._ctxCallIdx;
+    const map = new Map();
+    const ctx = ctxData();
+    if (ctx) (ctx.requests || []).forEach((r) => (r.call_ids || []).forEach((id) => map.set(id, r)));
+    state._ctxCallIdx = map;
+    return map;
+  }
+
+  function callLocate(id) {
+    for (const sess of state.doc.sessions || []) {
+      const c = (sess.calls || []).find((x) => x.call_id === id);
+      if (c) return { call: c, session: sess };
+    }
+    return null;
+  }
+
+  function gotoCall(id) {
+    const hit = callLocate(id);
+    if (!hit) { toast('这条调用不在当前 trace 里'); return; }
+    setView('calls');
+    openCall(hit.call, hit.session);
+  }
+
+  function gotoCtx(key) {
+    const req = ctxReqByKey(key);
+    if (!req) { toast('这一轮请求不在 context 数据里'); return; }
+    state.ctxKey = key;
+    setView('context');
+    const el = document.querySelector('.ctx-item.is-sel') || document.querySelector('#ctx-detail');
+    if (el) el.scrollIntoView({ block: 'center' });
+  }
+
   function openCall(call, session) {
     state.selectedCall = call.call_id;
     const info = toolInfo(call.name);
@@ -988,6 +1048,10 @@ python -m htrace build --context &lt;profile&gt;/htrace-context --raw-out demo/c
         <dt>turn / seq</dt><dd class="mono">${call.turn ?? '—'} / ${call.seq}</dd>
         <dt>call_id</dt><dd class="mono" style="font-size:11px;word-break:break-all">${esc(call.call_id || '—')}</dd>
         <dt>数据量</dt><dd class="mono">args ${fmtInt(call.args_bytes)} B · result ${fmtInt(call.result_bytes)} B</dd>
+        ${(() => {
+          const r = ctxCallIndex().get(call.call_id);
+          return r ? `<dt>这一轮</dt><dd><button class="mini-btn" id="to-ctx">上下文 ${fmtInt(r.est)} tok · 第 ${r.n} 次请求</button></dd>` : '';
+        })()}
       </dl>
 
       ${info ? `<div class="srcbox">
@@ -1010,6 +1074,8 @@ python -m htrace build --context &lt;profile&gt;/htrace-context --raw-out demo/c
     const c1 = $('#copy-call'); if (c1) c1.onclick = () => copy(call.call_id || '');
     const c2 = $('#copy-loc'); if (c2) c2.onclick = () => copy(`${info.file}:${info.handler_line || info.line}`);
     const g = $('#goto-session'); if (g) g.onclick = () => { state.sessionId = session.id; closeDrawer(); setView('sessions'); };
+    const toCtx = $('#to-ctx');
+    if (toCtx) toCtx.onclick = () => { const r = ctxCallIndex().get(call.call_id); if (r) { closeDrawer(); gotoCtx(r.k); } };
   }
 
   /* ---------------- keyboard ---------------- */
@@ -1130,6 +1196,10 @@ python -m htrace build --context &lt;profile&gt;/htrace-context --raw-out demo/c
       setView('context', { push: false });
       if (route[2]) openCtxSegment(ctxReqByKey(state.ctxKey), decodeURIComponent(route[2]));
       return;
+    }
+    if (route[0] === 'call' && route[1]) {
+      const hit = callLocate(decodeURIComponent(route[1]));
+      if (hit) { setView('calls', { push: false }); openCall(hit.call, hit.session); return; }
     }
     if (route[1]) state.sessionId = decodeURIComponent(route[1]);
     setView(route[0] || 'overview', { push: false });

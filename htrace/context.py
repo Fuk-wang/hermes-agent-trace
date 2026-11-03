@@ -400,6 +400,39 @@ def _read_raw(row: Dict[str, Any], raw_keep: int, scrub: bool = True) -> Optiona
     return _raw_segments(raw, scrub=scrub)
 
 
+# --------------------------------------------------------------------------- call linking
+def link_calls(ctx_doc: Dict[str, Any], sessions: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+    """Attach the tool calls each request produced.
+
+    state.db has no api_request_id on messages, so the split is by time inside one session:
+    a request owns the calls that started after it and before the session's next request.
+    That is the same window the model actually acted in, and it is labelled as such in the UI.
+    """
+    reqs = [r for r in (ctx_doc.get("requests") or []) if r.get("session") and r.get("ts")]
+    by_session: Dict[str, List[Dict[str, Any]]] = {}
+    for sess in sessions:
+        calls = [c for c in (sess.get("calls") or []) if c.get("started_ts") and c.get("call_id")]
+        if calls:
+            by_session[sess.get("id") or ""] = calls
+
+    for r in reqs:
+        r["call_ids"] = []
+
+    linked = 0
+    for sid, calls in by_session.items():
+        mine = sorted([r for r in reqs if r["session"] == sid], key=lambda r: r["ts"])
+        calls.sort(key=lambda c: c["started_ts"])
+        for i, r in enumerate(mine):
+            lo = r["ts"]
+            hi = mine[i + 1]["ts"] if i + 1 < len(mine) else float("inf")
+            hit = [c["call_id"] for c in calls if lo <= c["started_ts"] < hi]
+            r["call_ids"] = hit[:60]
+            r["call_count"] = len(hit)
+            linked += len(hit)
+    ctx_doc["linked_calls"] = linked
+    return ctx_doc
+
+
 # --------------------------------------------------------------------------- build
 def _raw_scope(raw_paths: Optional[Iterable[str]]) -> Optional[List[str]]:
     """Roots allowed to contribute raw text (None = every --context source)."""
@@ -515,6 +548,7 @@ def build(
         },
         "files": [str(p) for p in _expand(paths)],
         "raw_scope": roots if roots is not None else "all",
+        "raw_keep": raw_keep,
         "personal_notes": ("replaced-by-size" if scrub_personal_on else "published"),
         "requests": requests_out,
     }
