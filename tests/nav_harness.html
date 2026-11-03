@@ -1,0 +1,61 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>htrace nav harness</title>
+<pre id="out">running…</pre>
+<iframe id="fr" style="width:1500px;height:900px"></iframe>
+<script>
+  const out = document.getElementById('out');
+  const log = (m) => { out.textContent += '\n' + m; };
+  const sid = new URLSearchParams(location.search).get('sid') || '20261103_145330_88bded';
+  const fr = document.getElementById('fr');
+  fr.src = 'index.html#sessions/' + sid;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const win = () => fr.contentWindow;
+  const doc = () => fr.contentDocument;
+
+  fr.onload = async () => {
+    out.textContent = 'harness start';
+    try {
+      await sleep(1200);
+      log('start hash: ' + win().location.hash);
+
+      const chip = doc().querySelector('button[data-req]');
+      log('chip found: ' + !!chip);
+      chip.click();
+      await sleep(900);
+      const h1 = win().location.hash;
+      const ctxVisible = !doc().querySelector('#view-context').hidden;
+      const detail = doc().querySelector('#ctx-detail').innerHTML.length;
+      log('after chip click hash: ' + h1);
+      log('context view visible: ' + ctxVisible + ' detail chars: ' + detail);
+      log('PART1 ' + (h1.indexOf('#context/') === 0 && ctxVisible && detail > 200 ? 'PASS' : 'FAIL'));
+
+      win().history.back();
+      await sleep(900);
+      const h2 = win().location.hash;
+      const sessVisible = !doc().querySelector('#view-sessions').hidden;
+      const hasCalls = doc().querySelectorAll('tr[data-call]').length;
+      log('after back hash: ' + h2);
+      log('sessions view visible: ' + sessVisible + ' call rows: ' + hasCalls);
+      log('PART2 ' + (h2.indexOf('#sessions/') === 0 && sessVisible && hasCalls > 0 ? 'PASS' : 'FAIL'));
+
+      // 再往前一步：从会话页点开一个调用抽屉，抽屉里回跳上下文
+      const row = doc().querySelector('tr[data-call]');
+      row.click();
+      await sleep(500);
+      const drawerOpen = !doc().querySelector('#drawer').hidden;
+      const backLink = doc().querySelector('#to-ctx');
+      log('drawer open: ' + drawerOpen + ' back link: ' + !!backLink);
+      if (backLink) {
+        backLink.click();
+        await sleep(800);
+        const h3 = win().location.hash;
+        log('after drawer -> ctx hash: ' + h3);
+        log('PART3 ' + (h3.indexOf('#context/') === 0 && !doc().querySelector('#view-context').hidden ? 'PASS' : 'FAIL'));
+      } else { log('PART3 FAIL (no back link)'); }
+    } catch (e) {
+      log('ERROR ' + e);
+    }
+    log('DONE');
+  };
+</script>

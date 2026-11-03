@@ -96,9 +96,12 @@
     $('#view-sub').textContent = sub;
     state.cursor = 0;
     if (opts.push !== false) {
-      const hash = view === 'sessions' && state.sessionId ? '#sessions/' + state.sessionId : '#' + view;
+      let hash = '#' + view;
+      if (view === 'sessions' && state.sessionId) hash = '#sessions/' + state.sessionId;
+      else if (view === 'context' && state.ctxKey) hash = '#context/' + encodeURIComponent(state.ctxKey);
       if (location.hash !== hash) {
-        try { history.replaceState(null, '', hash); } catch (e) { /* file:// in some browsers */ }
+        /* push 而不是 replace：三处跳转（会话/调用/上下文）要能按浏览器返回键退回去 */
+        try { history.pushState({ htrace: view }, '', hash); } catch (e) { /* file:// in some browsers */ }
       }
     }
     render();
@@ -261,6 +264,23 @@
     });
   }
 
+  function ctxReqsOfSession(sid) {
+    const ctx = ctxData();
+    if (!ctx) return [];
+    return (ctx.requests || []).filter((r) => r.session === sid)
+      .sort((a, b) => (a.ts || 0) - (b.ts || 0) || (a.n || 0) - (b.n || 0));
+  }
+
+  /* 一次调用属于哪一轮：同一个会话里，时间上不晚于它开始的那次请求 */
+  function reqForCall(call, reqs) {
+    let hit = null;
+    for (const r of reqs) {
+      if ((r.ts || 0) <= (call.started_ts || 0)) hit = r;
+      else break;
+    }
+    return hit;
+  }
+
   function renderSessionDetail(id) {
     const s = sessionById(id);
     const box = $('#view-sessions');
@@ -268,11 +288,16 @@
     const byTool = Object.entries(s.stats.by_tool).sort((a, b) => b[1].calls - a[1].calls);
     const maxCalls = byTool.length ? byTool[0][1].calls : 1;
     const calls = s.calls.slice().reverse();
+    const reqs = ctxReqsOfSession(s.id);
+    const reqOf = new Map();
+    s.calls.forEach((c) => { const r = reqForCall(c, reqs); if (r) reqOf.set(c.call_id, r); });
 
     box.innerHTML = `
       <div class="hstack" style="margin-bottom:14px">
         <button class="mini-btn" id="back-sessions">← 全部会话</button>
         <span class="mono dim" style="font-size:11.5px">${esc(s.id)}</span>
+        <span class="spacer"></span>
+        ${reqs.length ? `<button class="mini-btn" id="to-ctx-session">这个会话的 ${reqs.length} 次请求</button>` : ''}
       </div>
       <div class="grid cards" style="margin-bottom:16px">
         <div class="card accent"><div class="label">tool calls</div><div class="value">${fmtInt(s.stats.calls)}</div><div class="hint">${s.stats.errors} 错误 · ${s.stats.pending} 未配对</div></div>
@@ -285,8 +310,8 @@
         <div class="panel">
           <div class="panel-head"><h3>调用记录</h3><span class="meta">${calls.length} 条 · 倒序</span></div>
           <div class="tablewrap" style="max-height:520px"><table class="fixed">
-            <colgroup><col style="width:40px"><col style="width:84px"><col style="width:118px"><col style="width:68px"><col style="width:70px"><col></colgroup>
-            <thead><tr><th>#</th><th>时间</th><th>工具</th><th class="num">耗时</th><th>状态</th><th>参数</th></tr></thead>
+            <colgroup><col style="width:40px"><col style="width:84px"><col style="width:118px"><col style="width:68px"><col style="width:70px"><col style="width:64px"><col></colgroup>
+            <thead><tr><th>#</th><th>时间</th><th>工具</th><th class="num">耗时</th><th>状态</th><th>请求</th><th>参数</th></tr></thead>
             <tbody>
               ${calls.map((c) => `
                 <tr data-call="${esc(c.call_id)}" data-seq="${c.seq}">
@@ -295,8 +320,9 @@
                   <td class="nowrap"><span class="tool-name">${esc(c.name)}</span></td>
                   <td class="num">${fmtMs(c.duration_ms)}</td>
                   <td><span class="pill ${c.status}">${c.status}</span></td>
+                  <td>${reqOf.has(c.call_id) ? `<button class="mini-btn" data-req="${esc(reqOf.get(c.call_id).k)}">#${reqOf.get(c.call_id).n}</button>` : '<span class="dim">—</span>'}</td>
                   <td><div class="preview">${esc(clip(argsOneLine(c), 80))}</div></td>
-                </tr>`).join('') || '<tr><td colspan="6" class="empty">这个会话没有工具调用</td></tr>'}
+                </tr>`).join('') || '<tr><td colspan="7" class="empty">这个会话没有工具调用</td></tr>'}
             </tbody>
           </table></div>
         </div>
@@ -313,6 +339,15 @@
                 </div>`).join('') || '<div class="empty">—</div>'}
             </div></div>
           </div>
+          ${reqs.length ? `<div class="panel" style="margin-bottom:14px">
+            <div class="panel-head"><h3>这个会话的请求</h3><span class="meta">${reqs.length}</span></div>
+            <div class="panel-body"><div class="sectionslist">
+              ${reqs.map((r) => `<div class="secrow" style="cursor:pointer" data-req="${esc(r.k)}">
+                <span class="pill">#${r.n}</span>
+                <span class="mono dim">${fmtInt(r.est)} tok</span>
+                <span class="tiny dim">${(r.call_ids || []).length} 个调用</span></div>`).join('')}
+            </div></div>
+          </div>` : ''}
           <div class="panel">
             <div class="panel-head"><h3>上下文</h3></div>
             <div class="panel-body"><dl class="kv">
@@ -327,6 +362,11 @@
       </div>
     `;
     $('#back-sessions').onclick = () => { state.sessionId = null; setView('sessions'); };
+    const toCtxSession = $('#to-ctx-session');
+    if (toCtxSession) toCtxSession.onclick = () => gotoCtx(reqs[reqs.length - 1].k);
+    box.querySelectorAll('[data-req]').forEach((el) => {
+      el.onclick = (e) => { e.stopPropagation(); gotoCtx(el.dataset.req); };
+    });
     const rowEls = Array.from(box.querySelectorAll('tr[data-call]'));
     state.rows = rowEls;
     rowEls.forEach((tr, i) => {
@@ -1216,6 +1256,9 @@ python -m htrace build --context &lt;profile&gt;/htrace-context --raw-out demo/c
     if (route[1]) state.sessionId = decodeURIComponent(route[1]);
     setView(route[0] || 'overview', { push: false });
   }
+
+  window.addEventListener('popstate', () => enterRoute());
+  window.addEventListener('hashchange', () => enterRoute());
 
   async function boot() {
     if (window.HTRACE_DEMO) {

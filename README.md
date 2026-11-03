@@ -127,6 +127,10 @@ python -m htrace build --out trace.json --source "<hermes-agent>" \
   16 条请求里 6 条连到 8 次调用；详情页列出「这一轮调了 N 个工具」，调用抽屉给「上下文 N tok · 第 K 次请求」
 - 原文按需展开：侧车单段上限 40k，抽屉首屏 6k + 「展开剩余」，侧车 329 KiB / gzip 86 KiB
 - CI：`tests.yml` 跑 ubuntu+windows × py3.10/3.11/3.12 共 6 个 job，首次运行全绿，README 挂徽章
+- 会话页也能进请求：每次调用带 `#K` 芯片、右栏列出该会话的请求、顶部「这个会话的 N 次请求」；
+  会话内 10 个有上下文数据的会话，15 次调用全部挂到请求上（0 条漏配）
+- 跳转可回退：`setView` 改 pushState，popstate/hashchange 走 enterRoute；`tests/nav_harness.html`
+  用真点击跑通「会话→请求→浏览器后退→调用抽屉→请求」三步，均 PASS
 
 ## 目录
 
